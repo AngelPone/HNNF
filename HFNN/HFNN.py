@@ -24,25 +24,24 @@ class HNNF(nn.Module):
             for node in level:
                 ff_layer = nn.Linear(node, 1)
                 self.networks[-1].append(ff_layer)
-        self.fc_final1 = nn.Linear(len(self.nodes)+1, sum(self.nodes[0]))
+        self.fc_final1 = nn.Linear(111, sum(self.nodes[0]))
         self.fc_final2 = nn.Linear(sum(self.nodes[0]), sum(self.nodes[0]))
 
     def forward(self, x):
-        outputs = x[0]
-        batch_size = outputs.shape[0]
-        level_number = len(self.networks) + 1
-        for i in range(level_number-1):
-            res = []
-            for j in range(len(self.networks[i])):
-                start_index = sum(self.nodes[i][0:j])
-                end_index = sum(self.nodes[i][0:(j+1)])
-                inputs = outputs[:, start_index: end_index]
-                res.append(F.relu(self.networks[i][j](inputs)))
-            outputs = torch.cat(res, dim=1)
-            outputs = torch.cat([outputs, x[i+1]], dim=0)
+        # outputs = x[0]
+        # batch_size = outputs.shape[0]
+        # for i in range(level_number-1):
+        #     res = []
+        #     for j in range(len(self.networks[i])):
+        #         start_index = sum(self.nodes[i][0:j])
+        #         end_index = sum(self.nodes[i][0:(j+1)])
+        #         inputs = outputs[:, start_index: end_index]
+        #         res.append(torch.sigmoid(self.networks[i][j](inputs)))
+        #     outputs = torch.cat(res, dim=1)
+        #     outputs = torch.cat([outputs, x[i+1]], dim=0)
+        outputs = torch.cat(x, dim=1)
 
-        outputs = self.fc_final1(torch.cat([outputs[i*batch_size:(i+1)*batch_size]
-                                           for i in range(level_number)], dim=1))
+        outputs = F.relu(self.fc_final1(outputs))
         outputs = self.fc_final2(outputs)
         outputs = torch.abs(outputs)
         return outputs
@@ -52,10 +51,10 @@ class HNNF(nn.Module):
         return nn.MSELoss(reduction='mean')(ouput, y)
 
     def fit(self, x, y, test_x, test_y,
-            learning_rate=0.01, batch_size=35, epochs=10,
+            learning_rate=0.01, batch_size=35, epochs=20, lr_gamma=0.5,
             shuffle=True):
         optimizer = optim.Adam(self.parameters(), lr=learning_rate)
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.9)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=200, gamma=lr_gamma)
         for t in range(epochs):
             if shuffle:
                 x, y = data_shuffle(x, y)
@@ -73,7 +72,7 @@ class HNNF(nn.Module):
                 index += 1
                 # print(f"epoch {t+1}, {index}/: train loss:{loss.data}")
             test_loss = self.loss(test_x, test_y)
-            if t % 5 == 0:
+            if (t+1) % 200 == 0:
                 print(f"epoch {t+1}: test loss: {test_loss.data}")
 
 
@@ -83,22 +82,24 @@ if __name__ == '__main__':
 
     import pandas as pd
     import numpy as np
+
+    torch.manual_seed(42)
+    random.seed(42)
+    np.random.seed(42)
+
     # train data
     train = pd.read_csv("../train.csv")
     train = train.rename({'Unnamed: 0': 'index'}, axis=1)
-    train.head()
 
     # actual values
     tourism = pd.read_csv('../data/TourismData_v4.csv', header=3)
     tourism = tourism.iloc[2:, 3:].reset_index(drop=True).astype('float32')
-    tourism.head()
 
     # prepare test data
     test = pd.read_csv('../arima_forecast.csv')
     test = test.rename({'Unnamed: 0': 'index'}, axis=1)
-    test.head()
-
     models = []
+
     v = '101'
     for i in range(12):
         h = train[train['index'].map(lambda x: x.startswith(f'h{i + 1}_'))]
@@ -118,9 +119,9 @@ if __name__ == '__main__':
         x_test.append(torch.Tensor(np.expand_dims(h_test['Total'].values, axis=1)))
         y_test = torch.Tensor(tourism.iloc[(168 + i):(168 + i + 61)].values)
 
-        model.fit(x, y, x_test, y_test, batch_size=32, learning_rate=0.5, epochs=50)
+        model.fit(x, y, x_test, y_test, batch_size=32, learning_rate=0.0001, epochs=2000, lr_gamma=0.9)
 
-        pd.DataFrame(model(x_test).data.numpy()).to_csv(f'forecast_h_{i+1}_v_{v}.csv')
+        pd.DataFrame(model(x_test).data.numpy()).to_csv(f'outputs/forecast_h_{i+1}_v_{v}.csv')
 
 
 
