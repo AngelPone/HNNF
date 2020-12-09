@@ -24,7 +24,8 @@ class HNNF(nn.Module):
             for node in level:
                 ff_layer = nn.Linear(node, 1)
                 self.networks[-1].append(ff_layer)
-        self.fc_final = nn.Linear(len(self.nodes)+1, sum(self.nodes[0]))
+        self.fc_final1 = nn.Linear(len(self.nodes)+1, sum(self.nodes[0]))
+        self.fc_final2 = nn.Linear(sum(self.nodes[0]), sum(self.nodes[0]))
 
     def forward(self, x):
         outputs = x[0]
@@ -40,8 +41,9 @@ class HNNF(nn.Module):
             outputs = torch.cat(res, dim=1)
             outputs = torch.cat([outputs, x[i+1]], dim=0)
 
-        outputs = self.fc_final(torch.cat([outputs[i*batch_size:(i+1)*batch_size]
+        outputs = self.fc_final1(torch.cat([outputs[i*batch_size:(i+1)*batch_size]
                                            for i in range(level_number)], dim=1))
+        outputs = self.fc_final2(outputs)
         outputs = torch.abs(outputs)
         return outputs
 
@@ -52,7 +54,7 @@ class HNNF(nn.Module):
     def fit(self, x, y, test_x, test_y,
             learning_rate=0.01, batch_size=35, epochs=10,
             shuffle=True):
-        optimizer = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=4e-3)
+        optimizer = optim.Adam(self.parameters(), lr=learning_rate)
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.9)
         for t in range(epochs):
             if shuffle:
@@ -97,7 +99,7 @@ if __name__ == '__main__':
     test.head()
 
     models = []
-    v = '1.0.1'
+    v = '101'
     for i in range(12):
         h = train[train['index'].map(lambda x: x.startswith(f'h{i + 1}_'))]
         x = []
@@ -118,7 +120,7 @@ if __name__ == '__main__':
 
         model.fit(x, y, x_test, y_test, batch_size=32, learning_rate=0.5, epochs=50)
 
-        pd.DataFrame(model(x_test).data.numpy()).to_csv(f'forecast_h_{i+1}.csv')
+        pd.DataFrame(model(x_test).data.numpy()).to_csv(f'forecast_h_{i+1}_v_{v}.csv')
 
 
 
